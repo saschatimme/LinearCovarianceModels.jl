@@ -2,7 +2,7 @@ module LinearCovariance
 
 export mle_system, vec_to_sym, sym_to_vec, hankel_matrix,
     mle_system_and_start_pair, tree, trees, generic_subspace,
-    dual_mle_system, dual_mle_system_and_start_pair
+    dual_mle_system, dual_mle_system_and_start_pair, toeplitz, mle_degree
 
 using LinearAlgebra
 
@@ -168,11 +168,26 @@ function dual_mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
     (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
 end
 
+"""
+    toeplitz(n::Integer)
+
+Returns a symmetric `n×n` toeplitz matrix.
+"""
+function toeplitz(n::Integer)
+    DP.@polyvar θ[1:n]
+    sum(0:n-1) do i
+        if i == 0
+            θ[1] .* diagm(0 => ones(n))
+        else
+            θ[i+1] .* (diagm(i => ones(n-i)) + diagm(-i => ones(n-i)))
+        end
+    end
+end
 
 """
     hankel_matrix(n::Integer)
 
-Generate a n by n hankel matrix.
+Generate a `n×n` hankel matrix.
 """
 function hankel_matrix(n::Integer)
     DP.@polyvar θ[1:2n-1]
@@ -189,14 +204,14 @@ function hankel_matrix(n::Integer)
 end
 
 """
-    tree(id::String)
+    tree(n, id::String)
 
 Get the covariance matrix corresponding to the tree with the given `id`.
 Returns `nothing` if the tree was not found.
 
 ## Example
 ```
-julia> tree("{{1, 2}, {3, 4}}")
+julia> tree(4, "{{1, 2}, {3, 4}}")
 4×4 Array{PolyVar{true},2}:
  t₁  t₅  t₇  t₇
  t₅  t₂  t₇  t₇
@@ -204,9 +219,9 @@ julia> tree("{{1, 2}, {3, 4}}")
  t₇  t₇  t₆  t₄
  ```
 """
-function tree(id::String)
+function tree(n::Integer, id::String)
     for data in TREE_DATA
-        if data.id == id
+        if data.n == n && data.id == id
             return data.tree
         end
     end
@@ -230,7 +245,70 @@ subspace.
 function generic_subspace(n::Integer, m::Integer)
     m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
-    [θᵢ .* rand_pos_def(n) for θᵢ in θ]
+    sum(θᵢ .* rand_pos_def(n) for θᵢ in θ)
+end
+
+
+function mle_degree(Σ; max_tries = 5)
+    F, x₀, p₀, x, p = mle_system_and_start_pair(Σ)
+    result = HC.monodromy_solve(F, x₀, p₀; parameters=p, max_loops_no_progress=5)
+    best_result = result
+    result_agreed = false
+    for i in 1:max_tries
+        q₀ = randn(ComplexF64, length(p₀))
+        S_q₀ = HC.solutions(HC.solve(F, HC.solutions(result); parameters=p, start_parameters=p₀, target_parameters=q₀))
+        new_result = HC.monodromy_solve(F, S_q₀, q₀; parameters=p, max_loops_no_progress=3)
+        if HC.nsolutions(new_result) == HC.nsolutions(best_result)
+            result_agreed = true
+            break
+        elseif HC.nsolutions(new_result) > HC.nsolutions(best_result)
+            best_result = new_result
+        end
+    end
+
+    if result_agreed
+        println("\nMLE degree: ", HC.nsolutions(best_result))
+        return HC.nsolutions(best_result), best_result
+    else
+        return nothing, best_result
+    end
+end
+
+
+
+function get_basis(Σ)
+    vars = variables(vec(Σ))
+    map(1:length(vars)) do i
+        [p(vars[i] => 1,
+           vars[1:i-1]=>zeros(Int, max(i-1,0)),
+           vars[i+1:end]=>zeros(Int, max(length(vars)-i,0))) for p in Σ]
+    end
+end
+
+
+function logl(B, θ, S::AbstractMatrix)
+    Σ = sum(θ[i] * B[i] for i in 1:length(B))
+    -log(det(Σ)) - tr(S*inv(Σ))
+end
+
+function gradient_logl(B, θ, S::AbstractMatrix)
+    Σ = sum(θ[i] * B[i]' for i in 1:length(B))
+    Σ⁻¹ = inv(Σ)
+    map(1:length(B)) do i
+        -tr(Σ⁻¹ * B[i]) + tr(S *  Σ⁻¹ * B[i] * Σ⁻¹)
+    end
+end
+
+function hessian_logl(B, θ, S::AbstractMatrix)
+    m = length(B)
+    Σ = sum(θ[i] * B[i] for i in 1:m)
+    Σ⁻¹ = inv(Σ)
+    H = zeros(eltype(Σ), m,m)
+    for i in 1:m, j in i:m
+        kernel = Σ⁻¹ * B[i] * Σ⁻¹ * B[j]
+        H[i,j] = H[j,i] = tr(kernel) - 2tr(S * kernel * Σ⁻¹)
+    end
+    Symmetric(H)
 end
 
 

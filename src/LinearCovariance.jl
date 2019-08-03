@@ -2,7 +2,8 @@ module LinearCovariance
 
 export mle_system, vec_to_sym, sym_to_vec, hankel_matrix,
     mle_system_and_start_pair, tree, trees, generic_subspace,
-    dual_mle_system, dual_mle_system_and_start_pair, toeplitz, mle_degree
+    dual_mle_system, dual_mle_system_and_start_pair, toeplitz, mle_degree,
+    rand_pos_def, generic_diagonal
 
 using LinearAlgebra
 
@@ -245,9 +246,18 @@ subspace.
 function generic_subspace(n::Integer, m::Integer)
     m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
-    sum(θᵢ .* rand_pos_def(n) for θᵢ in θ)
+    return sum(θᵢ .* rand_pos_def(n) for θᵢ in θ)
 end
 
+"""
+    generic_diagonal(n::Integer, m::Integer)
+
+"""
+function generic_diagonal(n::Integer, m::Integer)
+    m ≤ n || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
+    DP.@polyvar θ[1:m]
+    sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ)
+end
 
 function mle_degree(Σ; max_tries = 5)
     F, x₀, p₀, x, p = mle_system_and_start_pair(Σ)
@@ -277,7 +287,7 @@ end
 
 
 function get_basis(Σ)
-    vars = variables(vec(Σ))
+    vars = DP.variables(vec(Σ))
     map(1:length(vars)) do i
         [p(vars[i] => 1,
            vars[1:i-1]=>zeros(Int, max(i-1,0)),
@@ -303,7 +313,7 @@ function hessian_logl(B, θ, S::AbstractMatrix)
     m = length(B)
     Σ = sum(θ[i] * B[i] for i in 1:m)
     Σ⁻¹ = inv(Σ)
-    H = zeros(eltype(Σ), m,m)
+    H = zeros(eltype(Σ), m, m)
     for i in 1:m, j in i:m
         kernel = Σ⁻¹ * B[i] * Σ⁻¹ * B[j]
         H[i,j] = H[j,i] = tr(kernel) - 2tr(S * kernel * Σ⁻¹)

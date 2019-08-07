@@ -21,9 +21,8 @@ include("tree_data.jl")
 Given a polynomial system which represents a linear system ``Ax=b`` return
 `A` and `b`. If `f ` is not a linear system `nothing` is returned.
 """
-function linear_system(f::Vector{<:DP.AbstractPolynomialLike})
-    n = DP.nvariables(f)
-    vars = DP.variables(f)
+function linear_system(f::Vector{<:DP.AbstractPolynomialLike}, vars = DP.variables(f))
+    n = length(vars)
     A = zeros(DP.coefficienttype(f[1]), length(f), n)
     b = zeros(eltype(A), length(f))
     for (i, fᵢ) in enumerate(f)
@@ -145,7 +144,7 @@ function mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
     Σ₀ = [p(θ => θ₀) for p in Σ]
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)))
+    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
     p₀ = A \ b
 
     (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
@@ -163,7 +162,7 @@ function dual_mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
     Σ₀ = [p(θ => θ₀) for p in Σ]
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)))
+    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
     p₀ = A \ b
 
     (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
@@ -259,8 +258,12 @@ function generic_diagonal(n::Integer, m::Integer)
     sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ)
 end
 
-function mle_degree(Σ; max_tries = 5)
-    F, x₀, p₀, x, p = mle_system_and_start_pair(Σ)
+function mle_degree(Σ; max_tries = 5, dual=false)
+    if dual
+        F, x₀, p₀, x, p = dual_mle_system_and_start_pair(Σ)
+    else
+        F, x₀, p₀, x, p = mle_system_and_start_pair(Σ)
+    end
     result = HC.monodromy_solve(F, x₀, p₀; parameters=p, max_loops_no_progress=5)
     best_result = result
     result_agreed = false

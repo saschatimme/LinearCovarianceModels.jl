@@ -31,12 +31,12 @@ const LC = LinearCovariance
         @test norm(A₀ \ b₀ - [2,3,-5]) ≈ 0.0 atol=1e-12
     end
 
-    @testset "hankel" begin
-        A = hankel_matrix(3)
+    @testset "toeplitz" begin
+        A = toeplitz(3)
         x = variables(vec(A))
         @test A == [x[1] x[2] x[3]
-                    x[2] x[3] x[4]
-                    x[3] x[4] x[5]]
+                    x[2] x[1] x[2]
+                    x[3] x[2] x[1]]
     end
 
     @testset "mle_system_and_start_pair" begin

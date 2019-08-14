@@ -1,11 +1,15 @@
 module LinearCovarianceModels
 
-export ml_degree_witness, MLDegreeWitness, MLModel,
-    model, parameters, solutions, is_dual,
+export LCModel, dim,
     # families
     generic_subspace, generic_diagonal, toeplitz, tree, trees,
+    # ML degree
+    ml_degree_witness, MLDegreeWitness,
+    model, parameters, solutions, is_dual, ml_degree, verify,
     # solve specific instance
-    mle, solve, covariance_matrix, logl, gradient_logl, hessian_logl, classify_point
+    mle, critical_points, covariance_matrix, logl, gradient_logl, hessian_logl, classify_point,
+    # MLE helper
+    mle_system, dual_mle_system, mle_system_and_start_pair, dual_mle_system_and_start_pair
 
 
 using LinearAlgebra
@@ -18,37 +22,6 @@ const HC = HomotopyContinuation
 const DP = DynamicPolynomials
 
 include("tree_data.jl")
-
-"""
-    linear_system(f::Vector{<:DP.AbstractPolynomialLike})
-
-Given a polynomial system which represents a linear system ``Ax=b`` return
-`A` and `b`. If `f ` is not a linear system `nothing` is returned.
-"""
-function linear_system(f::Vector{<:DP.AbstractPolynomialLike}, vars = DP.variables(f))
-    n = length(vars)
-    A = zeros(DP.coefficienttype(f[1]), length(f), n)
-    b = zeros(eltype(A), length(f))
-    for (i, fᵢ) in enumerate(f)
-        for t in DP.terms(fᵢ)
-            constant = true
-            for (j, v) in enumerate(vars)
-                d = DP.degree(t, v)
-                d ≤ 1 || return nothing
-
-                if d == 1
-                    A[i,j] = DP.coefficient(t)
-                    constant = false
-                    break
-                end
-            end
-            if constant
-                b[i] = -DP.coefficient(t)
-            end
-        end
-    end
-    A, b
-end
 
 outer(A) = A*A'
 
@@ -99,86 +72,45 @@ part iterating columnwise.
 """
 sym_to_vec(S) = (n = size(S, 1); [S[i,j] for i in 1:n for j in i:n])
 
-
 """
-    mle_system(Σ::Matrix{<:AbstractPolynomialLike})
+    LCModel(Σ::Matrix{<:DP.AbstractPolynomialLike})
 
-Generate the MLE system corresponding to the family of covariances matrices
-parameterized by `Σ`.
-Returns the named tuple `(system, variables, parameters)`.
+Create a linear covariance model from the parameterization `Σ`.
 """
-function mle_system(Σ::Matrix{<:DP.AbstractPolynomialLike})
-    θ = DP.variables(vec(Σ))
-    m = DP.nvariables(θ)
-    n = size(Σ, 1)
-    N = binomial(n+1,2)
+struct LCModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
+    Σ::Matrix{T1}
+    B::Vector{Matrix{T2}}
 
-    DP.@polyvar k[1:N] s[1:N]
+    function LCModel(Σ::Matrix{T1}, B::Vector{Matrix{T2}}) where {T1,T2}
+        all(DP.maxdegree.(vec(Σ)) .<= 1) || throw(ArgumentError("Input is not a linear covariance model"))
+        new{T1,T2}(Σ, B)
+    end
+end
+LCModel(Σ) = LCModel(Σ, get_basis(Σ))
 
-    K, S = vec_to_sym(k), vec_to_sym(s)
-    l = -tr(K * Σ) + tr(S * K * Σ * K)
-    ∇l = DP.differentiate(l, θ)
-    KΣ_I = vec(K * Σ - Matrix(I, n,n))
-    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
+function get_basis(Σ)
+    vars = DP.variables(vec(Σ))
+    map(1:length(vars)) do i
+        [p(vars[i] => 1,
+           vars[1:i-1]=>zeros(Int, max(i-1,0)),
+           vars[i+1:end]=>zeros(Int, max(length(vars)-i,0))) for p in Σ]
+    end
 end
 
-"""
-    dual_mle_system(Σ::Matrix{<:AbstractPolynomialLike})
-
-Generate the dual MLE system corresponding to the family of covariances matrices
-parameterized by `Σ`.
-Returns the named tuple `(system, variables, parameters)`.
-"""
-function dual_mle_system(Σ::Matrix{<:DP.AbstractPolynomialLike})
-    θ = DP.variables(vec(Σ))
-    m = DP.nvariables(θ)
-    n = size(Σ, 1)
-    N = binomial(n+1,2)
-
-    DP.@polyvar k[1:N] s[1:N]
-
-    K, S = vec_to_sym(k), vec_to_sym(s)
-    l = -tr(K * Σ) + tr(S * Σ)
-    ∇l = DP.differentiate(l, θ)
-    KΣ_I = vec(K * Σ - Matrix(I, n,n))
-    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
+Base.size(M::LCModel) = (size(M.Σ, 1), length(M.B))
+Base.size(M::LCModel, i::Int) = size(M)[i]
+function Base.show(io::IO, M::LCModel)
+    println(io, "$(dim(M))-dimensional LCModel:")
+    Base.print_matrix(io, M.Σ)
 end
+Base.broadcastable(M::LCModel) = Ref(M)
 
 """
-    mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
+    dim(M::LCModel)
 
-Generate the mle_system and a corresponding start pair `(x₀,p₀)`.
+Returns the dimension of the model.
 """
-function mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
-    system, vars, params = mle_system(Σ)
-    θ = DP.variables(vec(Σ))
-    θ₀ = randn(ComplexF64, length(θ))
-    Σ₀ = [p(θ => θ₀) for p in Σ]
-    K₀ = inv(Σ₀)
-    x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
-
-    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
-end
-
-"""
-    dual_mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
-
-Generate the dual MLE system and a corresponding start pair `(x₀,p₀)`.
-"""
-function dual_mle_system_and_start_pair(Σ::Matrix{<:DP.AbstractPolynomialLike})
-    system, vars, params = dual_mle_system(Σ)
-    θ = DP.variables(vec(Σ))
-    θ₀ = randn(ComplexF64, length(θ))
-    Σ₀ = [p(θ => θ₀) for p in Σ]
-    K₀ = inv(Σ₀)
-    x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
-
-    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
-end
+dim(M::LCModel) = length(M.B)
 
 """
     toeplitz(n::Integer)
@@ -193,26 +125,7 @@ function toeplitz(n::Integer)
         else
             θ[i+1] .* (diagm(i => ones(n-i)) + diagm(-i => ones(n-i)))
         end
-    end
-end
-
-"""
-    hankel_matrix(n::Integer)
-
-Generate a `n×n` hankel matrix.
-"""
-function hankel_matrix(n::Integer)
-    DP.@polyvar θ[1:2n-1]
-    A = Matrix{DP.Polynomial{true,Int64}}(undef, n, n)
-    for j in 1:n, i in 1:j
-        A[i,j-i+1] = θ[j]
-    end
-    for k in 2:n
-        for i in k:n
-            A[i, n-i+k] = θ[k+n-1]
-        end
-    end
-    A
+    end |> LCModel
 end
 
 """
@@ -244,7 +157,7 @@ end
 function make_tree(tree::Matrix{Symbol})
     var_names = sort(unique(vec(tree)))
     D = Dict(map(v -> (v, DP.PolyVar{true}(String(v))), var_names))
-    map(v -> D[v], tree)
+    LCModel(map(v -> D[v], tree))
 end
 
 """
@@ -267,39 +180,103 @@ subspace.
 function generic_subspace(n::Integer, m::Integer)
     m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
-    return sum(θᵢ .* rand_pos_def(n) for θᵢ in θ)
+    return LCModel(sum(θᵢ .* rand_pos_def(n) for θᵢ in θ))
 end
 
 """
     generic_diagonal(n::Integer, m::Integer)
 
+Generate a generic family of ``n×n`` diagonal matrices living in an ``m``-dimensional
+subspace.
 """
 function generic_diagonal(n::Integer, m::Integer)
     m ≤ n || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
-    sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ)
+    LCModel(sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ))
 end
 
-struct MLModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
-    Σ::Matrix{T1}
-    B::Vector{Matrix{T2}}
+
+"""
+    mle_system(M::LCModel)
+
+Generate the MLE system corresponding to the family of covariances matrices
+parameterized by `Σ`.
+Returns the named tuple `(system, variables, parameters)`.
+"""
+function mle_system(M::LCModel)
+    Σ = M.Σ
+    θ = DP.variables(vec(Σ))
+    m = DP.nvariables(θ)
+    n = size(Σ, 1)
+    N = binomial(n+1,2)
+
+    DP.@polyvar k[1:N] s[1:N]
+
+    K, S = vec_to_sym(k), vec_to_sym(s)
+    l = -tr(K * Σ) + tr(S * K * Σ * K)
+    ∇l = DP.differentiate(l, θ)
+    KΣ_I = vec(K * Σ - Matrix(I, n,n))
+    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
 end
-MLModel(Σ) = MLModel(Σ, get_basis(Σ))
 
-function get_basis(Σ)
-    vars = DP.variables(vec(Σ))
-    map(1:length(vars)) do i
-        [p(vars[i] => 1,
-           vars[1:i-1]=>zeros(Int, max(i-1,0)),
-           vars[i+1:end]=>zeros(Int, max(length(vars)-i,0))) for p in Σ]
-    end
+"""
+    dual_mle_system(M::LCModel)
+
+Generate the dual MLE system corresponding to the family of covariances matrices
+parameterized by `Σ`.
+Returns the named tuple `(system, variables, parameters)`.
+"""
+function dual_mle_system(M::LCModel)
+    Σ = M.Σ
+    θ = DP.variables(vec(Σ))
+    m = DP.nvariables(θ)
+    n = size(Σ, 1)
+    N = binomial(n+1,2)
+
+    DP.@polyvar k[1:N] s[1:N]
+
+    K, S = vec_to_sym(k), vec_to_sym(s)
+    l = -tr(K * Σ) + tr(S * Σ)
+    ∇l = DP.differentiate(l, θ)
+    KΣ_I = vec(K * Σ - Matrix(I, n,n))
+    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
 end
 
-Base.size(M::MLModel) = (size(M.Σ, 1), length(M.B))
-Base.size(M::MLModel, i::Int) = size(M)[i]
-Base.show(io::IO, M::MLModel) = Base.print_matrix(io, M.Σ)
-Base.broadcastable(M::MLModel) = Ref(M)
+"""
+    mle_system_and_start_pair(M::LCModel)
 
+Generate the mle_system and a corresponding start pair `(x₀,p₀)`.
+"""
+function mle_system_and_start_pair(M::LCModel)
+    system, vars, params = mle_system(M)
+    θ = DP.variables(vec(M.Σ))
+    θ₀ = randn(ComplexF64, length(θ))
+    Σ₀ = [p(θ => θ₀) for p in M.Σ]
+    K₀ = inv(Σ₀)
+    x₀ = [θ₀; sym_to_vec(K₀)]
+    A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
+    p₀ = A \ b
+
+    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
+end
+
+"""
+    dual_mle_system_and_start_pair(M::LCModel)
+
+Generate the dual MLE system and a corresponding start pair `(x₀,p₀)`.
+"""
+function dual_mle_system_and_start_pair(M::LCModel)
+    system, vars, params = dual_mle_system(M)
+    θ = DP.variables(vec(M.Σ))
+    θ₀ = randn(ComplexF64, length(θ))
+    Σ₀ = [p(θ => θ₀) for p in M.Σ]
+    K₀ = inv(Σ₀)
+    x₀ = [θ₀; sym_to_vec(K₀)]
+    A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
+    p₀ = A \ b
+
+    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
+end
 
 """
     MLDegreeWitness
@@ -308,7 +285,7 @@ Data structure holding an MLE model. This also holds a set of solutions for a ge
 which we call a witness.
 """
 struct MLDegreeWitness{T1, T2, V<:AbstractVector}
-    model::MLModel{T1,T2}
+    model::LCModel{T1,T2}
     solutions::Vector{V}
     p::Vector{ComplexF64}
     dual::Bool
@@ -316,14 +293,14 @@ end
 
 
 function MLDegreeWitness(Σ::AbstractMatrix, solutions, p, dual)
-    MLDegreeWitness(MLModel(Σ), solutions, p, dual)
+    MLDegreeWitness(LCModel(Σ), solutions, p, dual)
 end
 
 function Base.show(io::IO, R::MLDegreeWitness)
-    println("MLDegreeWitness:")
-    println(" • ML degree → $(length(R.solutions))")
-    println(" • model dimension → $(size(R.model, 2))")
-    println(" • dual → $(R.dual)")
+    println(io, "MLDegreeWitness:")
+    println(io, " • ML degree → $(length(R.solutions))")
+    println(io, " • model dimension → $(dim(model(R)))")
+    println(io, " • dual → $(R.dual)")
 end
 
 """
@@ -356,23 +333,32 @@ Indicates whether `W` is a witness for the dual MLE.
 is_dual(W::MLDegreeWitness) = W.dual
 
 """
-    ml_degree_witness(Σ::AbstractMatrix; ml_degree=nothing, max_tries=5, dual=false)
+    ml_degree(W::MLDegreeWitness)
+
+Returns the ML degree.
+"""
+ml_degree(W::MLDegreeWitness) = length(solutions(W))
+
+
+"""
+    ml_degree_witness(Σ::LCModel; ml_degree=nothing, max_tries=5, dual=false)
 
 Compute a [`MLDegreeWitness`](@ref) for a given model Σ. If the ML degree is already
 known it can be provided to stop the computations early. The stopping criterion is based
 on a heuristic, `max_tries` indicates how many different parameters are tried a most until
 an agreement is found.
 """
-function ml_degree_witness(Σ; ml_degree=nothing, max_tries = 5, dual=false)
+ml_degree_witness(Σ; kwargs...) = ml_degree_witness(LCModel(Σ); kwargs...)
+function ml_degree_witness(M::LCModel; ml_degree=nothing, max_tries = 5, dual=false)
     if dual
-        F, x₀, p₀, x, p = dual_mle_system_and_start_pair(Σ)
+        F, x₀, p₀, x, p = dual_mle_system_and_start_pair(M)
     else
-        F, x₀, p₀, x, p = mle_system_and_start_pair(Σ)
+        F, x₀, p₀, x, p = mle_system_and_start_pair(M)
     end
     result = HC.monodromy_solve(F, x₀, p₀; target_solutions_count=ml_degree,
                                             parameters=p, max_loops_no_progress=5)
     if HC.nsolutions(result) == ml_degree
-        return MLDegreeWitness(Σ, HC.solutions(result), result.parameters, dual)
+        return MLDegreeWitness(M, HC.solutions(result), result.parameters, dual)
     end
 
     best_result = result
@@ -388,30 +374,40 @@ function ml_degree_witness(Σ; ml_degree=nothing, max_tries = 5, dual=false)
             best_result = new_result
         end
     end
-    MLDegreeWitness(Σ, HC.solutions(best_result), best_result.parameters, dual)
+    MLDegreeWitness(M, HC.solutions(best_result), best_result.parameters, dual)
 end
 
+
+"""
+    verify(W::MLDegreeWitness; options...)
+
+Tries to verify that the computed ML degree witness is complete, i.e., that
+the ML degree is correct. This uses the [`verify_solution_completeness`](https://www.juliahomotopycontinuation.org/HomotopyContinuation.jl/stable/monodromy/#HomotopyContinuation.verify_solution_completeness)
+of HomotopyContinuation.jl. All caveats mentioned there apply.
+The `options` are also passed to `verify_solution_completeness`.
+"""
 function verify(W::MLDegreeWitness)
     if W.dual
-        F, var, params = dual_mle_system(model(W).Σ)
+        F, var, params = dual_mle_system(model(W))
     else
-        F, var, params = mle_system(model(W).Σ)
+        F, var, params = mle_system(model(W))
     end
-    HC.verify_solution_completeness(F, solutions(W), parameters(W); parameters=params)
+    HC.verify_solution_completeness(F, solutions(W), parameters(W); parameters=params, kwargs...)
 end
 
 """
-    solve(W::MLDegreeWitness, S::AbstractMatrix; kwargs...)
+    critical_points(W::MLDegreeWitness, S::AbstractMatrix; kwargs...)
 
-Compute all solutions to the MLE problem of `W` for the given sample covariance matrix
+Compute all critical points to the MLE problem of `W` for the given sample covariance matrix
 `S`.
 """
-function solve(W::MLDegreeWitness, S::AbstractMatrix; kwargs...)
+function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
+               only_positive_definite=true, only_positive=false, kwargs...)
     issymmetric(S) || throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
     if W.dual
-        F, var, params = dual_mle_system(model(W).Σ)
+        F, var, params = dual_mle_system(model(W))
     else
-        F, var, params = mle_system(model(W).Σ)
+        F, var, params = mle_system(model(W))
     end
     result = HC.solve(F, solutions(W); parameters=params,
                          start_parameters=W.p,
@@ -419,35 +415,60 @@ function solve(W::MLDegreeWitness, S::AbstractMatrix; kwargs...)
                          kwargs...)
 
     m = size(model(W), 2)
-    map(s -> s[1:m], HC.real_solutions(result))
+    θs = map(s -> s[1:m], HC.real_solutions(result))
+    if only_positive_definite
+        filter!(θs) do θ
+            isposdef(covariance_matrix(model(W), θ))
+        end
+    end
+
+    if only_positive
+        filter!(θs) do θ
+            all(covariance_matrix(model(W), θ) .> 0)
+        end
+    end
+
+    res = map(θs) do θ
+        (θ, logl(model(W), θ, S), classify_point(model(W), θ, S))
+    end
+
+    if !isempty(res)
+        best_val = maximum(θs)
+        for i in 1:length(res)
+            if first(res[i]) == best_val && res[i][3] == :local_maximum
+                res[i] = (res[i][1], res[i][2], :global_maximum)
+            end
+        end
+    end
+    res
 end
 
 """
-    covariance_matrix(M::MLModel, θ)
+    covariance_matrix(M::LCModel, θ)
 
 Compute the covariance matrix corresponding to the value of `θ` and the given model
 `M`.
 """
 covariance_matrix(W::MLDegreeWitness, θ) = covariance_matrix(model(W), θ)
-covariance_matrix(M::MLModel, θ) = sum(θ[i] * M.B[i] for i in 1:size(M,2))
+covariance_matrix(M::LCModel, θ) = sum(θ[i] * M.B[i] for i in 1:size(M,2))
 
 
 """
-    logl(M::MLModel, θ, S::AbstractMatrix)
+    logl(M::LCModel, θ, S::AbstractMatrix)
 
 Evaluate the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)`` of the MLE problem.
 """
-function logl(M::MLModel, θ, S::AbstractMatrix)
+function logl(M::LCModel, θ, S::AbstractMatrix)
     logl(covariance_matrix(M, θ), S)
 end
 logl(Σ::AbstractMatrix, S::AbstractMatrix) = -logdet(Σ) - tr(S*inv(Σ))
 
 """
-    gradient_logl(M::MLModel, θ, S::AbstractMatrix)
+    gradient_logl(M::LCModel, θ, S::AbstractMatrix)
 
 Evaluate the gradient of the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)`` of the MLE problem.
 """
-gradient_logl(M::MLModel, θ, S::AbstractMatrix) = gradient_logl(M.B, θ, S)
+gradient_logl(M::LCModel, θ, S::AbstractMatrix) = gradient_logl(M.B, θ, S)
 function gradient_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
     Σ = sum(θ[i] * B[i] for i in 1:length(B))
     Σ⁻¹ = inv(Σ)
@@ -457,11 +478,11 @@ function gradient_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
 end
 
 """
-    hessian_logl(M::MLModel, θ, S::AbstractMatrix)
+    hessian_logl(M::LCModel, θ, S::AbstractMatrix)
 
 Evaluate the hessian of the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)`` of the MLE problem.
 """
-hessian_logl(M::MLModel, θ, S::AbstractMatrix) = hessian_logl(M.B, θ, S)
+hessian_logl(M::LCModel, θ, S::AbstractMatrix) = hessian_logl(M.B, θ, S)
 function hessian_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
     m = length(B)
     Σ = sum(θ[i] * B[i] for i in 1:m)
@@ -475,11 +496,11 @@ function hessian_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
 end
 
 """
-    classify_point(M::MLModel, θ, S::AbstractMatrix)
+    classify_point(M::LCModel, θ, S::AbstractMatrix)
 
 Classify the critical point `θ` of the log-likelihood function.
 """
-function classify_point(M::MLModel, θ, S::AbstractMatrix)
+function classify_point(M::LCModel, θ, S::AbstractMatrix)
     H = hessian_logl(M, θ, S)
     emin, emax = extrema(eigvals(H))
     if emin < 0 && emax < 0
@@ -508,28 +529,9 @@ should be considered.
 """
 function mle(W::MLDegreeWitness, S::AbstractMatrix; only_positive_definite=true, only_positive=false, kwargs...)
     is_dual(W) && throw(ArgumentError("`mle` is currently only supported for MLE not dual MLE."))
-    θs = solve(W, S; kwargs...)
-    if only_positive_definite
-        filter!(θs) do θ
-            isposdef(covariance_matrix(model(W), θ))
-        end
-    end
-
-    if only_positive
-        filter!(θs) do θ
-            all(covariance_matrix(model(W), θ) .> 0)
-        end
-    end
-
-    filter!(θs) do θ
-        classify_point(model(W), θ, S) == :local_maximum
-    end
-    sort!(θs; by=θ -> logl(model(W), θ, S), rev=true)
-
-    if isempty(θs)
-        return nothing
-    end
-    return first(θs)
+    results = critical_points(W, S; kwargs...)
+    ind = findfirst(r -> r[3] == :global_maximum, results)
+    isnothing(ind) ? nothing : results[ind][1]
 end
 
 end # module

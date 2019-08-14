@@ -2,25 +2,22 @@
 
 [`LinearCovarianceModels.jl`](https://github.com/saschatimme/LinearCovarianceModels) is a package for
 computing Maximum Likelihood degrees of linear covariance models using numerical nonlinear algebra.
-In particular [HomotopyContinuation.jl](www.JuliaHomotopyContinuation.org).
+In particular [HomotopyContinuation.jl](https://www.JuliaHomotopyContinuation.org).
 
 ## Introduction by Example
 
 
-## Reference
+## Linear Covariance Models
 
+The linear covariance models are wrapped in the `LCModel` type:
 ```@docs
-ml_degree_witness
-MLDegreeWitness
-MLModel
+LCModel
 model
-parameters
-solutions
-is_dual
-verify
+dim
 ```
 
-### Models
+### Default models
+The following linear covariance models are provided by default
 ```@docs
 generic_subspace
 generic_diagonal
@@ -29,11 +26,24 @@ tree
 trees
 ```
 
-### Compute MLE for specific instances
-    # solve specific instance
+
+## ML Degree
+
+```@docs
+ml_degree_witness
+MLDegreeWitness
+ml_degree
+parameters
+solutions
+is_dual
+verify
+```
+
+## Compute MLE for specific instances
+
 ```@docs
 mle
-solve
+critical_points
 covariance_matrix
 logl
 gradient_logl

@@ -386,7 +386,7 @@ the ML degree is correct. This uses the [`verify_solution_completeness`](https:/
 of HomotopyContinuation.jl. All caveats mentioned there apply.
 The `options` are also passed to `verify_solution_completeness`.
 """
-function verify(W::MLDegreeWitness)
+function verify(W::MLDegreeWitness; kwargs...)
     if W.dual
         F, var, params = dual_mle_system(model(W))
     else

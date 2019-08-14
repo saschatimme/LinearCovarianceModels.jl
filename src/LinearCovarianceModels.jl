@@ -1,4 +1,4 @@
-module LinearCovariance
+module LinearCovarianceModels
 
 export ml_degree_witness, MLDegreeWitness, MLModel,
     model, parameters, solutions, is_dual,

@@ -1,7 +1,7 @@
-using LinearCovariance
+using LinearCovarianceModels
 using DynamicPolynomials, LinearAlgebra, Test
 
-const LC = LinearCovariance
+const LC = LinearCovarianceModels
 
 @testset "LinearCovariance.jl" begin
     # Write your own tests here.

@@ -1,4 +1,4 @@
-using Documenter, LinearCovariance
+using Documenter, LinearCovarianceModels
 
 makedocs(
     sitename = "LinearCovarianceModels",

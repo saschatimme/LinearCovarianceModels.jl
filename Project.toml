@@ -1,4 +1,4 @@
-name = "LinearCovariance"
+name = "LinearCovarianceModels"
 uuid = "4af8ee2a-afa9-11e9-10dc-fb1b37f8f4b5"
 authors = ["Sascha Timme <sascha.timme@gmail.com>"]
 version = "0.1.0"
@@ -12,6 +12,7 @@ PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 
 [compat]
 julia = "1.1"
+HomotopyContinuation = "^1.1"
 
 
 [extras]

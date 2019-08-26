@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl.svg?branch=master)](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl)
 
 [`LinearCovarianceModels.jl`](https://github.com/saschatimme/LinearCovarianceModels) is a package for
-computing Maximum Likelihood degrees of linear covariance models using numerical nonlinear algebra.
+computing Maximum Likelihood degrees and MLEs of linear covariance models using numerical nonlinear algebra.
 In particular [HomotopyContinuation.jl](https://www.JuliaHomotopyContinuation.org).
 
 ## Installation

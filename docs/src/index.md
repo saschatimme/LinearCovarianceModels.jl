@@ -1,6 +1,6 @@
 # Introduction
 
-[`LinearCovarianceModels.jl`](https://github.com/saschatimme/LinearCovarianceModels) is a package for
+[`LinearCovarianceModels.jl`](https://github.com/saschatimme/LinearCovarianceModels.jl) is a package for
 computing Maximum Likelihood degrees of linear covariance models using numerical nonlinear algebra.
 In particular [HomotopyContinuation.jl](https://www.JuliaHomotopyContinuation.org).
 

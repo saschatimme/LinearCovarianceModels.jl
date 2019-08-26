@@ -8,10 +8,15 @@ In particular [HomotopyContinuation.jl](https://www.JuliaHomotopyContinuation.or
 
 ## Installation
 
-The installation can be done in the Julia REPL by executing
+In order to use `LinearCovarianceModels.jl` you need to have at least Julia 1.1 installed. If this is not the case you can download it at [julialang.org](https://julialang.org). Please see the [platform specific instructions](https://julialang.org/downloads/platform.html) if you have trouble installing Julia.
+
+The package can be installed by executing
 ```julia
 julia> using Pkg; pkg"add https://github.com/saschatimme/LinearCovarianceModels.jl.git"
 ```
+in the Julia REPL.
+
+If you are looking for a more IDE like experience take a look at [Juno](https://junolab.org).
 
 ## Introduction by Example
 

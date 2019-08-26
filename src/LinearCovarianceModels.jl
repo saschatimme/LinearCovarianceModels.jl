@@ -400,13 +400,17 @@ function verify(W::MLDegreeWitness; kwargs...)
 end
 
 """
-    critical_points(W::MLDegreeWitness, S::AbstractMatrix; kwargs...)
+    critical_points(W::MLDegreeWitness, S::AbstractMatrix;
+            only_positive_definite=true, only_non_negative=false,
+            options...)
 
 Compute all critical points to the MLE problem of `W` for the given sample covariance matrix
-`S`.
+`S`. If `only_positive_definite` is `true` only positive definite solutions are considered.
+If `only_non_negative` is `true` only non-negative solutions are considered.
+The `options` are argument passed to the [`solve`](https://www.juliahomotopycontinuation.org/HomotopyContinuation.jl/stable/solving/#HomotopyContinuation.solve) routine from `HomotopyContinuation.jl`.
 """
 function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
-               only_positive_definite=true, only_positive=false, kwargs...)
+               only_positive_definite=true, only_non_negative=false, kwargs...)
     issymmetric(S) || throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
     if W.dual
         F, var, params = dual_mle_system(model(W))
@@ -426,9 +430,9 @@ function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
         end
     end
 
-    if only_positive
+    if only_non_negative
         filter!(θs) do θ
-            all(covariance_matrix(model(W), θ) .> 0)
+            all(covariance_matrix(model(W), θ) .≥ 0)
         end
     end
 

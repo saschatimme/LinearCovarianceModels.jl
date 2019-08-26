@@ -6,6 +6,13 @@
 computing Maximum Likelihood degrees of linear covariance models using numerical nonlinear algebra.
 In particular [HomotopyContinuation.jl](https://www.JuliaHomotopyContinuation.org).
 
+## Installation
+
+The installation can be done in the Julia REPL by executing
+```julia
+julia> using Pkg; pkg"add https://github.com/saschatimme/LinearCovarianceModels.jl.git"
+```
+
 ## Introduction by Example
 
 ```julia

@@ -1,6 +1,6 @@
 # LinearCovarianceModels
 
-[![Build Status](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl.svg?branch=master)](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl)
+[![][docs-stable-img]][docs-stable-url] [![Build Status](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl.svg?branch=master)](https://travis-ci.com/saschatimme/LinearCovarianceModels.jl)
 
 [`LinearCovarianceModels.jl`](https://github.com/saschatimme/LinearCovarianceModels) is a package for
 computing Maximum Likelihood degrees and MLEs of linear covariance models using numerical nonlinear algebra.
@@ -64,3 +64,9 @@ julia> mle(W, S)
  -0.21592947057775033
  -1.4522862659134732
 ```
+
+For more informations take a look at the [documentation](https://saschatimme.github.io/LinearCovarianceModels.jl/dev).
+
+
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
+[docs-stable-url]: https://saschatimme.github.io/LinearCovarianceModels.jl/dev

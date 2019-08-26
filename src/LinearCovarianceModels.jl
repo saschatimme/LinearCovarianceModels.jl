@@ -30,9 +30,9 @@ outer(A) = A*A'
 
 Create a random positive definite `n × n` matrix. The matrix is generated
 by first creating a `n × n` matrix `X` where each entry is independently drawn
-from the `Normal(μ=0, σ²=0.5)` distribution. Then `X*X'` is returned.
+from the `Normal(μ=0, σ²=1.0)` distribution. Then `X*X'./n` is returned.
 """
-rand_pos_def(n) = outer(rand(Normal(0, 0.5), n, n))
+rand_pos_def(n) = outer(rand(Normal(0, 1.0), n, n)) ./ n
 
 n_vec_to_sym(k) = div(-1 + round(Int, sqrt(1+8k)), 2)
 n_sym_to_vec(n) = binomial(n+1,2)
@@ -172,15 +172,19 @@ end
 
 
 """
-    generic_subspace(n::Integer, m::Integer)
+    generic_subspace(n::Integer, m::Integer); pos_def::Bool=true)
 
 Generate a generic family of symmetric ``n×n`` matrices living in an ``m``-dimensional
-subspace.
+subspace. If `pos_def` is `true` then positive definite matrices are used as a basis.
 """
-function generic_subspace(n::Integer, m::Integer)
+function generic_subspace(n::Integer, m::Integer; pos_def::Bool=true)
     m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
-    return LCModel(sum(θᵢ .* rand_pos_def(n) for θᵢ in θ))
+    if pos_def
+        LCModel(sum(θᵢ .* rand_pos_def(n) for θᵢ in θ))
+    else
+        LCModel(sum(θᵢ .* Symmetric(randn(n,n)) for θᵢ in θ))
+    end
 end
 
 """

@@ -21,6 +21,9 @@ If you are looking for a more IDE like experience take a look at [Juno](https://
 ## Introduction by Example
 
 ```julia
+# load package
+julia> using LinearCovarianceModels
+
 # Create a linear covariance model
 julia> Σ = toeplitz(3)
 3-dimensional LCModel:

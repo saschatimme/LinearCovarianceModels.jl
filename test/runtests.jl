@@ -8,8 +8,8 @@ const LC = LinearCovarianceModels
 @testset "LinearCovariance.jl" begin
     @testset "vec to sym and back" begin
         v = [1,2,3, 4, 5, 6]
-        @test LC.vec_to_sym(v) == [1 2 3; 2 4 5; 3 5 6]
-        @test LC.sym_to_vec(LC.vec_to_sym(v)) == v
+        @test vec_to_sym(v) == [1 2 3; 2 4 5; 3 5 6]
+        @test sym_to_vec(vec_to_sym(v)) == v
     end
 
     @testset "LCModels" begin
@@ -37,6 +37,9 @@ const LC = LinearCovarianceModels
         @test_throws ArgumentError generic_subspace(6, 0)
 
         @test_throws ArgumentError LCModel(toeplitz(3).Σ .^2)
+
+        # throw for non-symmetric input
+        @test_throws ArgumentError LCModel([x[1] x[1]; x[2] x[1]])
     end
 
     @testset "mle system" begin

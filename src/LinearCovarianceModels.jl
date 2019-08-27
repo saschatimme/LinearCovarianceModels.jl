@@ -9,7 +9,9 @@ export LCModel, dim,
     # solve specific instance
     mle, critical_points, covariance_matrix, logl, gradient_logl, hessian_logl, classify_point,
     # MLE helper
-    mle_system, dual_mle_system, mle_system_and_start_pair, dual_mle_system_and_start_pair
+    mle_system, dual_mle_system, mle_system_and_start_pair, dual_mle_system_and_start_pair,
+    # helpers
+    vec_to_sym, sym_to_vec
 
 
 using LinearAlgebra
@@ -76,6 +78,22 @@ sym_to_vec(S) = (n = size(S, 1); [S[i,j] for i in 1:n for j in i:n])
     LCModel(Σ::Matrix{<:DP.AbstractPolynomialLike})
 
 Create a linear covariance model from the parameterization `Σ`.
+This uses as input a matrix of polynomials created by the [`DynamicPolynomials`](https://github.com/JuliaAlgebra/DynamicPolynomials.jl) package.
+
+## Example
+
+```
+using DynamicPolynomials # load polynomials package
+
+# use DynamicPolynomials to create variables θ₁, θ₂, θ₃.
+@polyvar θ[1:3]
+
+# create our model as matrix of DynamicPolynomials
+Σ = [θ[1] θ[2] θ[3]; θ[2] θ[1] θ[2]; θ[3] θ[2] θ[1]]
+
+# create model
+model = LCModel(Σ)
+```
 """
 struct LCModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
     Σ::Matrix{T1}
@@ -83,10 +101,12 @@ struct LCModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
 
     function LCModel(Σ::Matrix{T1}, B::Vector{Matrix{T2}}) where {T1,T2}
         all(DP.maxdegree.(vec(Σ)) .<= 1) || throw(ArgumentError("Input is not a linear covariance model"))
+        issymmetric(Σ) || throw(ArgumentError("Input is not a symmetric matrix!"))
         new{T1,T2}(Σ, B)
     end
 end
-LCModel(Σ) = LCModel(Σ, get_basis(Σ))
+LCModel(Σ::Matrix) = LCModel(Σ, get_basis(Σ))
+LCModel(Σ::AbstractMatrix) = LCModel(Matrix(Σ))
 
 function get_basis(Σ)
     vars = DP.variables(vec(Σ))

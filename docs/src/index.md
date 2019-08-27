@@ -94,3 +94,9 @@ gradient_logl
 hessian_logl
 classify_point
 ```
+
+## Helper functions
+```@docs
+sym_to_vec
+vec_to_sym
+```

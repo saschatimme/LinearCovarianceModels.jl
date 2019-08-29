@@ -12,7 +12,7 @@ In order to use `LinearCovarianceModels.jl` you need to have at least Julia 1.1 
 
 The package can be installed by executing
 ```julia
-julia> using Pkg; pkg"add https://github.com/saschatimme/LinearCovarianceModels.jl.git"
+julia> using Pkg; Pkg.add("LinearCovarianceModels")
 ```
 in the Julia REPL.
 
@@ -68,8 +68,8 @@ julia> mle(W, S)
  -1.4522862659134732
 ```
 
-For more informations take a look at the [documentation](https://saschatimme.github.io/LinearCovarianceModels.jl/dev).
+For more informations take a look at the [documentation](https://saschatimme.github.io/LinearCovarianceModels.jl/stable).
 
 
 [docs-stable-img]: https://img.shields.io/badge/docs-stable-blue.svg
-[docs-stable-url]: https://saschatimme.github.io/LinearCovarianceModels.jl/dev
+[docs-stable-url]: https://saschatimme.github.io/LinearCovarianceModels.jl/stable

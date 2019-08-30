@@ -403,20 +403,20 @@ end
 
 
 """
-    verify(W::MLDegreeWitness; options...)
+    verify(W::MLDegreeWitness; trace_tol=1e-5, options...)
 
 Tries to verify that the computed ML degree witness is complete, i.e., that
 the ML degree is correct. This uses the [`verify_solution_completeness`](https://www.juliahomotopycontinuation.org/HomotopyContinuation.jl/stable/monodromy/#HomotopyContinuation.verify_solution_completeness)
 of HomotopyContinuation.jl. All caveats mentioned there apply.
 The `options` are also passed to `verify_solution_completeness`.
 """
-function verify(W::MLDegreeWitness; kwargs...)
+function verify(W::MLDegreeWitness; trace_tol=1e-5, kwargs...)
     if W.dual
         F, var, params = dual_mle_system(model(W))
     else
         F, var, params = mle_system(model(W))
     end
-    HC.verify_solution_completeness(F, solutions(W), parameters(W); parameters=params, kwargs...)
+    HC.verify_solution_completeness(F, solutions(W), parameters(W); parameters=params, trace_tol=trace_tol, kwargs...)
 end
 
 """

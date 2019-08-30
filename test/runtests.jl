@@ -74,6 +74,7 @@ const LC = LinearCovarianceModels
         @test dim(model(W)) == 3
         @test parameters(W) isa AbstractVector
         @test verify(W)
+        @test verify(W; trace_tol=1e-6)
     end
 
     @testset "solve" begin

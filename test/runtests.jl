@@ -40,6 +40,11 @@ const LC = LinearCovarianceModels
 
         # throw for non-symmetric input
         @test_throws ArgumentError LCModel([x[1] x[1]; x[2] x[1]])
+
+        # handle special matrix types
+        @polyvar θ[1:7]
+        M = LCModel(SymTridiagonal(θ[1:4],θ[5:7]))
+        @test dim(M) == 7
     end
 
     @testset "mle system" begin

@@ -106,7 +106,7 @@ struct LCModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
     end
 end
 LCModel(Σ::Matrix) = LCModel(Σ, get_basis(Σ))
-LCModel(Σ::AbstractMatrix) = LCModel(Matrix(Σ))
+LCModel(Σ::AbstractMatrix) = LCModel(Matrix(Σ .+ false))
 
 function get_basis(Σ)
     vars = DP.variables(vec(Σ))

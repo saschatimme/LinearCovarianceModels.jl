@@ -1,31 +1,50 @@
 module LinearCovarianceModels
 
-export LCModel, dim,
+export LCModel,
+    dim,
     # families
-    generic_subspace, generic_diagonal, toeplitz, tree, trees,
+    generic_subspace,
+    generic_diagonal,
+    toeplitz,
+    tree,
+    trees,
     # ML degree
-    ml_degree_witness, MLDegreeWitness,
-    model, parameters, solutions, is_dual, ml_degree, verify,
+    ml_degree_witness,
+    MLDegreeWitness,
+    model,
+    parameters,
+    solutions,
+    is_dual,
+    ml_degree,
+    verify,
     # solve specific instance
-    mle, critical_points, covariance_matrix, logl, gradient_logl, hessian_logl, classify_point,
+    mle,
+    critical_points,
+    covariance_matrix,
+    logl,
+    gradient_logl,
+    hessian_logl,
+    classify_point,
     # MLE helper
-    mle_system, dual_mle_system, mle_system_and_start_pair, dual_mle_system_and_start_pair,
+    mle_system,
+    dual_mle_system,
+    mle_system_and_start_pair,
+    dual_mle_system_and_start_pair,
     # helpers
-    vec_to_sym, sym_to_vec
+    vec_to_sym,
+    sym_to_vec
 
 
 using LinearAlgebra
 
 import HomotopyContinuation
-import DynamicPolynomials
 import Distributions: Normal
 
 const HC = HomotopyContinuation
-const DP = DynamicPolynomials
 
 include("tree_data.jl")
 
-outer(A) = A*A'
+outer(A) = A * A'
 
 """
     rand_pos_def(n)
@@ -36,8 +55,8 @@ from the `Normal(μ=0, σ²=1.0)` distribution. Then `X*X'./n` is returned.
 """
 rand_pos_def(n) = outer(rand(Normal(0, 1.0), n, n)) ./ n
 
-n_vec_to_sym(k) = div(-1 + round(Int, sqrt(1+8k)), 2)
-n_sym_to_vec(n) = binomial(n+1,2)
+n_vec_to_sym(k) = div(-1 + round(Int, sqrt(1 + 8k)), 2)
+n_sym_to_vec(n) = binomial(n + 1, 2)
 
 """
     vec_to_sym(v)
@@ -59,8 +78,8 @@ function vec_to_sym(s)
     n = n_vec_to_sym(length(s))
     S = Matrix{eltype(s)}(undef, n, n)
     l = 1
-    for i in 1:n, j in i:n
-        S[i,j] = S[j,i] = s[l]
+    for i = 1:n, j = i:n
+        S[i, j] = S[j, i] = s[l]
         l += 1
     end
     S
@@ -72,7 +91,7 @@ end
 Converts a symmetric matrix `S` to a vector by filling the vector with lower triangular
 part iterating columnwise.
 """
-sym_to_vec(S) = (n = size(S, 1); [S[i,j] for i in 1:n for j in i:n])
+sym_to_vec(S) = (n = size(S, 1); [S[i, j] for i = 1:n for j = i:n])
 
 """
     LCModel(Σ::Matrix{<:DP.AbstractPolynomialLike})
@@ -95,13 +114,12 @@ using DynamicPolynomials # load polynomials package
 model = LCModel(Σ)
 ```
 """
-struct LCModel{T1<:DP.AbstractPolynomialLike, T2<:Number}
+struct LCModel{T1,T2<:Number}
     Σ::Matrix{T1}
     B::Vector{Matrix{T2}}
 
-    function LCModel(Σ::Matrix{T1}, B::Vector{Matrix{T2}}) where {T1,T2}
-        all(DP.maxdegree.(vec(Σ)) .<= 1) || throw(ArgumentError("Input is not a linear covariance model"))
-        issymmetric(Σ) || throw(ArgumentError("Input is not a symmetric matrix!"))
+    function LCModel(Σ::Matrix, B::Vector{Matrix{T2}}) where {T1,T2}
+        issymmetric(Σ) || throw(ArgumentError("Input is not a symmetric matrix!"))
         new{T1,T2}(Σ, B)
     end
 end
@@ -111,9 +129,13 @@ LCModel(Σ::AbstractMatrix) = LCModel(Matrix(Σ .+ false))
 function get_basis(Σ)
     vars = DP.variables(vec(Σ))
     map(1:length(vars)) do i
-        [p(vars[i] => 1,
-           vars[1:i-1]=>zeros(Int, max(i-1,0)),
-           vars[i+1:end]=>zeros(Int, max(length(vars)-i,0))) for p in Σ]
+        [
+            p(
+                vars[i] => 1,
+                vars[1:i-1] => zeros(Int, max(i - 1, 0)),
+                vars[i+1:end] => zeros(Int, max(length(vars) - i, 0)),
+            ) for p in Σ
+        ]
     end
 end
 
@@ -143,7 +165,7 @@ function toeplitz(n::Integer)
         if i == 0
             θ[1] .* diagm(0 => ones(n))
         else
-            θ[i+1] .* (diagm(i => ones(n-i)) + diagm(-i => ones(n-i)))
+            θ[i+1] .* (diagm(i => ones(n - i)) + diagm(-i => ones(n - i)))
         end
     end |> LCModel
 end
@@ -187,7 +209,7 @@ Return all trees with `n` leaves as a tuple (id, tree).
 """
 function trees(n::Int)
     4 ≤ n ≤ 7 || throw(ArgumentError("Only trees with 4 to 7 leaves are supported."))
-    map(d -> (id=d.id, tree=make_tree(d.tree)), filter(d -> d.n == n, TREE_DATA))
+    map(d -> (id = d.id, tree = make_tree(d.tree)), filter(d -> d.n == n, TREE_DATA))
 end
 
 
@@ -198,7 +220,7 @@ Generate a generic family of symmetric ``n×n`` matrices living in an ``m``-dime
 subspace. If `pos_def` is `true` then positive definite matrices are used as a basis.
 """
 function generic_subspace(n::Integer, m::Integer; pos_def::Bool=true)
-    m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
+    m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
     if pos_def
         LCModel(sum(θᵢ .* rand_pos_def(n) for θᵢ in θ))
@@ -214,7 +236,7 @@ Generate a generic family of ``n×n`` diagonal matrices living in an ``m``-dimen
 subspace.
 """
 function generic_diagonal(n::Integer, m::Integer)
-    m ≤ n || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
+    m ≤ n || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
     DP.@polyvar θ[1:m]
     LCModel(sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ))
 end
@@ -279,7 +301,7 @@ function mle_system_and_start_pair(M::LCModel)
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
     A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
+    p₀ = A \ b
 
     (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
 end
@@ -297,7 +319,7 @@ function dual_mle_system_and_start_pair(M::LCModel)
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
     A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
+    p₀ = A \ b
 
     (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
 end
@@ -431,7 +453,7 @@ The `options` are argument passed to the [`solve`](https://www.juliahomotopycont
 """
 function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
                only_positive_definite=true, only_non_negative=false, kwargs...)
-    issymmetric(S) || throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
+    issymmetric(S) || throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
     if W.dual
         F, var, params = dual_mle_system(model(W))
     else

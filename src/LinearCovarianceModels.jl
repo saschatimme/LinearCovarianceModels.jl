@@ -28,8 +28,6 @@ export LCModel,
     # MLE helper
     mle_system,
     dual_mle_system,
-    mle_system_and_start_pair,
-    dual_mle_system_and_start_pair,
     # helpers
     vec_to_sym,
     sym_to_vec
@@ -38,6 +36,7 @@ export LCModel,
 using LinearAlgebra
 
 import HomotopyContinuation
+import HomotopyContinuation: dim, parameters, solutions
 import Distributions: Normal
 
 const HC = HomotopyContinuation
@@ -94,18 +93,18 @@ part iterating columnwise.
 sym_to_vec(S) = (n = size(S, 1); [S[i, j] for i = 1:n for j = i:n])
 
 """
-    LCModel(Σ::Matrix{<:DP.AbstractPolynomialLike})
+    LCModel(Σ::Matrix)
 
 Create a linear covariance model from the parameterization `Σ`.
-This uses as input a matrix of polynomials created by the [`DynamicPolynomials`](https://github.com/JuliaAlgebra/DynamicPolynomials.jl) package.
+This uses as input a matrix of polynomials created by the `@var` macro from `HomotopyContinuation.jl`.
 
 ## Example
 
 ```
-using DynamicPolynomials # load polynomials package
+using HomotopyContinuation # load polynomials package
 
-# use DynamicPolynomials to create variables θ₁, θ₂, θ₃.
-@polyvar θ[1:3]
+# use HomotopyContinuation to create variables θ₁, θ₂, θ₃.
+@var θ[1:3]
 
 # create our model as matrix of DynamicPolynomials
 Σ = [θ[1] θ[2] θ[3]; θ[2] θ[1] θ[2]; θ[3] θ[2] θ[1]]
@@ -118,7 +117,7 @@ struct LCModel{T1,T2<:Number}
     Σ::Matrix{T1}
     B::Vector{Matrix{T2}}
 
-    function LCModel(Σ::Matrix, B::Vector{Matrix{T2}}) where {T1,T2}
+    function LCModel(Σ::Matrix{T1}, B::Vector{Matrix{T2}}) where {T1,T2}
         issymmetric(Σ) || throw(ArgumentError("Input is not a symmetric matrix!"))
         new{T1,T2}(Σ, B)
     end
@@ -127,7 +126,7 @@ LCModel(Σ::Matrix) = LCModel(Σ, get_basis(Σ))
 LCModel(Σ::AbstractMatrix) = LCModel(Matrix(Σ .+ false))
 
 function get_basis(Σ)
-    vars = DP.variables(vec(Σ))
+    vars = HC.variables(vec(Σ))
     map(1:length(vars)) do i
         [
             p(
@@ -152,7 +151,7 @@ Base.broadcastable(M::LCModel) = Ref(M)
 
 Returns the dimension of the model.
 """
-dim(M::LCModel) = length(M.B)
+HC.dim(M::LCModel) = length(M.B)
 
 """
     toeplitz(n::Integer)
@@ -160,12 +159,12 @@ dim(M::LCModel) = length(M.B)
 Returns a symmetric `n×n` toeplitz matrix.
 """
 function toeplitz(n::Integer)
-    DP.@polyvar θ[1:n]
+    HC.@var θ[1:n]
     sum(0:n-1) do i
         if i == 0
-            θ[1] .* diagm(0 => ones(n))
+            θ[1] .* diagm(0 => ones(Int, n))
         else
-            θ[i+1] .* (diagm(i => ones(n - i)) + diagm(-i => ones(n - i)))
+            θ[i+1] .* (diagm(i => ones(Int, n - i)) + diagm(-i => ones(Int, n - i)))
         end
     end |> LCModel
 end
@@ -198,7 +197,7 @@ end
 
 function make_tree(tree::Matrix{Symbol})
     var_names = sort(unique(vec(tree)))
-    D = Dict(map(v -> (v, DP.PolyVar{true}(String(v))), var_names))
+    D = Dict(map(v -> (v, HC.Variable(v)), var_names))
     LCModel(map(v -> D[v], tree))
 end
 
@@ -219,13 +218,14 @@ end
 Generate a generic family of symmetric ``n×n`` matrices living in an ``m``-dimensional
 subspace. If `pos_def` is `true` then positive definite matrices are used as a basis.
 """
-function generic_subspace(n::Integer, m::Integer; pos_def::Bool=true)
-    m ≤ binomial(n+1,2) || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
-    DP.@polyvar θ[1:m]
+function generic_subspace(n::Integer, m::Integer; pos_def::Bool = true)
+    m ≤ binomial(n + 1, 2) ||
+        throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
+    HC.@var θ[1:m]
     if pos_def
         LCModel(sum(θᵢ .* rand_pos_def(n) for θᵢ in θ))
     else
-        LCModel(sum(θᵢ .* Symmetric(randn(n,n)) for θᵢ in θ))
+        LCModel(sum(θᵢ .* Symmetric(randn(n, n)) for θᵢ in θ))
     end
 end
 
@@ -237,7 +237,7 @@ subspace.
 """
 function generic_diagonal(n::Integer, m::Integer)
     m ≤ n || throw(ArgumentError("`m=$m` is larger than the dimension of the space."))
-    DP.@polyvar θ[1:m]
+    HC.@var θ[1:m]
     LCModel(sum(θᵢ .* diagm(0 => randn(n)) for θᵢ in θ))
 end
 
@@ -251,18 +251,18 @@ Returns the named tuple `(system, variables, parameters)`.
 """
 function mle_system(M::LCModel)
     Σ = M.Σ
-    θ = DP.variables(vec(Σ))
-    m = DP.nvariables(θ)
+    θ = HC.variables(vec(Σ))
+    m = HC.nvariables(θ)
     n = size(Σ, 1)
-    N = binomial(n+1,2)
+    N = binomial(n + 1, 2)
 
-    DP.@polyvar k[1:N] s[1:N]
+    HC.@var k[1:N] s[1:N]
 
     K, S = vec_to_sym(k), vec_to_sym(s)
     l = -tr(K * Σ) + tr(S * K * Σ * K)
-    ∇l = DP.differentiate(l, θ)
-    KΣ_I = vec(K * Σ - Matrix(I, n,n))
-    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
+    ∇l = HC.differentiate(l, θ)
+    KΣ_I = vec(K * Σ - Matrix(I, n, n))
+    HC.System([∇l; KΣ_I], variables = [θ; k], parameters = s)
 end
 
 """
@@ -274,18 +274,18 @@ Returns the named tuple `(system, variables, parameters)`.
 """
 function dual_mle_system(M::LCModel)
     Σ = M.Σ
-    θ = DP.variables(vec(Σ))
-    m = DP.nvariables(θ)
+    θ = HC.variables(vec(Σ))
+    m = HC.nvariables(θ)
     n = size(Σ, 1)
-    N = binomial(n+1,2)
+    N = binomial(n + 1, 2)
 
-    DP.@polyvar k[1:N] s[1:N]
+    HC.@var k[1:N] s[1:N]
 
     K, S = vec_to_sym(k), vec_to_sym(s)
     l = -tr(K * Σ) + tr(S * Σ)
-    ∇l = DP.differentiate(l, θ)
-    KΣ_I = vec(K * Σ - Matrix(I, n,n))
-    (system=[∇l; KΣ_I], variables=[θ; k], parameters=s)
+    ∇l = HC.differentiate(l, θ)
+    KΣ_I = vec(K * Σ - Matrix(I, n, n))
+    HC.System([∇l; KΣ_I], variables = [θ; k], parameters = s)
 end
 
 """
@@ -294,16 +294,16 @@ end
 Generate the mle_system and a corresponding start pair `(x₀,p₀)`.
 """
 function mle_system_and_start_pair(M::LCModel)
-    system, vars, params = mle_system(M)
-    θ = DP.variables(vec(M.Σ))
+    system = mle_system(M)
+    θ = HC.variables(vec(M.Σ))
     θ₀ = randn(ComplexF64, length(θ))
     Σ₀ = [p(θ => θ₀) for p in M.Σ]
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
+    exprs = system(x₀, HC.parameters(system))[1:end-length(K₀)]
+    p₀, _ = HC.find_start_pair(HC.System(exprs); compile = false)
 
-    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
+    (system = system, x₀ = x₀, p₀ = p₀)
 end
 
 """
@@ -312,16 +312,16 @@ end
 Generate the dual MLE system and a corresponding start pair `(x₀,p₀)`.
 """
 function dual_mle_system_and_start_pair(M::LCModel)
-    system, vars, params = dual_mle_system(M)
-    θ = DP.variables(vec(M.Σ))
+    system = dual_mle_system(M)
+    θ = HC.variables(vec(M.Σ))
     θ₀ = randn(ComplexF64, length(θ))
     Σ₀ = [p(θ => θ₀) for p in M.Σ]
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    A, b = HC.linear_system(DP.subs.(system[1:length(x₀)], Ref(vars => x₀)), params)
-    p₀ = A \ b
+    exprs = system(x₀, HC.parameters(system))[1:end-length(K₀)]
+    p₀, _ = HC.find_start_pair(HC.System(exprs); compile = false)
 
-    (system=system, x₀=x₀, p₀=p₀, variables=vars, parameters=params)
+    (system = system, x₀ = x₀, p₀ = p₀)
 end
 
 """
@@ -330,7 +330,7 @@ end
 Data structure holding an MLE model. This also holds a set of solutions for a generic instance,
 which we call a witness.
 """
-struct MLDegreeWitness{T1, T2, V<:AbstractVector}
+struct MLDegreeWitness{T1,T2,V<:AbstractVector}
     model::LCModel{T1,T2}
     solutions::Vector{V}
     p::Vector{ComplexF64}
@@ -387,7 +387,7 @@ ml_degree(W::MLDegreeWitness) = length(solutions(W))
 
 
 """
-    ml_degree_witness(Σ::LCModel; ml_degree=nothing, max_tries=5, dual=false)
+    ml_degree_witness(Σ::LCModel; ml_degree=nothing, max_tries=5, dual=false, compile = false)
 
 Compute a [`MLDegreeWitness`](@ref) for a given model Σ. If the ML degree is already
 known it can be provided to stop the computations early. The stopping criterion is based
@@ -395,24 +395,37 @@ on a heuristic, `max_tries` indicates how many different parameters are tried a 
 an agreement is found.
 """
 ml_degree_witness(Σ; kwargs...) = ml_degree_witness(LCModel(Σ); kwargs...)
-function ml_degree_witness(M::LCModel; ml_degree=nothing, max_tries = 5, dual=false)
+function ml_degree_witness(
+    M::LCModel;
+    ml_degree = nothing,
+    max_tries = 5,
+    dual = false,
+    compile = false,
+)
     if dual
-        F, x₀, p₀, x, p = dual_mle_system_and_start_pair(M)
+        F, x₀, p₀ = dual_mle_system_and_start_pair(M)
     else
-        F, x₀, p₀, x, p = mle_system_and_start_pair(M)
+        F, x₀, p₀ = mle_system_and_start_pair(M)
     end
-    result = HC.monodromy_solve(F, x₀, p₀; target_solutions_count=ml_degree,
-                                            parameters=p, max_loops_no_progress=5)
+    result =
+        HC.monodromy_solve(F, x₀, p₀; target_solutions_count = ml_degree, compile = compile)
     if HC.nsolutions(result) == ml_degree
-        return MLDegreeWitness(M, HC.solutions(result), result.parameters, dual)
+        return MLDegreeWitness(M, HC.solutions(result), HC.parameters(result), dual)
     end
 
     best_result = result
     result_agreed = false
-    for i in 1:max_tries
+    for i = 1:max_tries
         q₀ = randn(ComplexF64, length(p₀))
-        S_q₀ = HC.solutions(HC.solve(F, HC.solutions(result); parameters=p, start_parameters=p₀, target_parameters=q₀))
-        new_result = HC.monodromy_solve(F, S_q₀, q₀; parameters=p, max_loops_no_progress=3)
+        S_q₀ = HC.solutions(HC.solve(
+            F,
+            HC.solutions(result);
+            start_parameters = HC.parameters(result),
+            target_parameters = q₀,
+            compile = compile,
+        ))
+        new_result =
+            HC.monodromy_solve(F, S_q₀, q₀; compile = compile, max_loops_no_progress = 3)
         if HC.nsolutions(new_result) == HC.nsolutions(best_result)
             result_agreed = true
             break
@@ -420,7 +433,7 @@ function ml_degree_witness(M::LCModel; ml_degree=nothing, max_tries = 5, dual=fa
             best_result = new_result
         end
     end
-    MLDegreeWitness(M, HC.solutions(best_result), best_result.parameters, dual)
+    MLDegreeWitness(M, HC.solutions(best_result), HC.parameters(best_result), dual)
 end
 
 
@@ -432,13 +445,21 @@ the ML degree is correct. This uses the [`verify_solution_completeness`](https:/
 of HomotopyContinuation.jl. All caveats mentioned there apply.
 The `options` are also passed to `verify_solution_completeness`.
 """
-function verify(W::MLDegreeWitness; trace_tol=1e-5, kwargs...)
+function verify(W::MLDegreeWitness; trace_tol = 1e-5, compile = false, kwargs...)
     if W.dual
-        F, var, params = dual_mle_system(model(W))
+        F = dual_mle_system(model(W))
     else
-        F, var, params = mle_system(model(W))
+        F = mle_system(model(W))
     end
-    HC.verify_solution_completeness(F, solutions(W), parameters(W); parameters=params, trace_tol=trace_tol, kwargs...)
+    HC.verify_solution_completeness(
+        F,
+        solutions(W),
+        parameters(W);
+        trace_tol = trace_tol,
+        monodromy_options = (compile = compile,),
+        parameter_homotopy_options = (compile = compile,),
+        kwargs...,
+    )
 end
 
 """
@@ -451,18 +472,29 @@ Compute all critical points to the MLE problem of `W` for the given sample covar
 If `only_non_negative` is `true` only non-negative solutions are considered.
 The `options` are argument passed to the [`solve`](https://www.juliahomotopycontinuation.org/HomotopyContinuation.jl/stable/solving/#HomotopyContinuation.solve) routine from `HomotopyContinuation.jl`.
 """
-function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
-               only_positive_definite=true, only_non_negative=false, kwargs...)
-    issymmetric(S) || throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
+function critical_points(
+    W::MLDegreeWitness,
+    S::AbstractMatrix;
+    only_positive_definite = true,
+    only_non_negative = false,
+    compile = false,
+    kwargs...,
+)
+    issymmetric(S) ||
+        throw("Sample covariance matrix `S` is not symmetric. Consider wrapping it in `Symmetric(S)` to enforce symmetry.")
     if W.dual
-        F, var, params = dual_mle_system(model(W))
+        F = dual_mle_system(model(W))
     else
-        F, var, params = mle_system(model(W))
+        F = mle_system(model(W))
     end
-    result = HC.solve(F, solutions(W); parameters=params,
-                         start_parameters=W.p,
-                         target_parameters=sym_to_vec(S),
-                         kwargs...)
+    result = HC.solve(
+        F,
+        solutions(W);
+        start_parameters = W.p,
+        target_parameters = sym_to_vec(S),
+        compile = compile,
+        kwargs...,
+    )
 
     m = size(model(W), 2)
     θs = map(s -> s[1:m], HC.real_solutions(result))
@@ -484,7 +516,7 @@ function critical_points(W::MLDegreeWitness, S::AbstractMatrix;
 
     if !isempty(res)
         best_val = maximum(θs)
-        for i in 1:length(res)
+        for i = 1:length(res)
             if first(res[i]) == best_val && res[i][3] == :local_maximum
                 res[i] = (res[i][1], res[i][2], :global_maximum)
             end
@@ -500,7 +532,7 @@ Compute the covariance matrix corresponding to the value of `θ` and the given m
 `M`.
 """
 covariance_matrix(W::MLDegreeWitness, θ) = covariance_matrix(model(W), θ)
-covariance_matrix(M::LCModel, θ) = sum(θ[i] * M.B[i] for i in 1:size(M,2))
+covariance_matrix(M::LCModel, θ) = sum(θ[i] * M.B[i] for i = 1:size(M, 2))
 
 
 """
@@ -511,7 +543,7 @@ Evaluate the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)`` of the MLE prob
 function logl(M::LCModel, θ, S::AbstractMatrix)
     logl(covariance_matrix(M, θ), S)
 end
-logl(Σ::AbstractMatrix, S::AbstractMatrix) = -logdet(Σ) - tr(S*inv(Σ))
+logl(Σ::AbstractMatrix, S::AbstractMatrix) = -logdet(Σ) - tr(S * inv(Σ))
 
 """
     gradient_logl(M::LCModel, θ, S::AbstractMatrix)
@@ -520,10 +552,10 @@ Evaluate the gradient of the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)``
 """
 gradient_logl(M::LCModel, θ, S::AbstractMatrix) = gradient_logl(M.B, θ, S)
 function gradient_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
-    Σ = sum(θ[i] * B[i] for i in 1:length(B))
+    Σ = sum(θ[i] * B[i] for i = 1:length(B))
     Σ⁻¹ = inv(Σ)
     map(1:length(B)) do i
-        -tr(Σ⁻¹ * B[i]) + tr(S *  Σ⁻¹ * B[i] * Σ⁻¹)
+        -tr(Σ⁻¹ * B[i]) + tr(S * Σ⁻¹ * B[i] * Σ⁻¹)
     end
 end
 
@@ -535,12 +567,12 @@ Evaluate the hessian of the log-likelihood ``log(det(Σ⁻¹)) - tr(SΣ⁻¹)`` 
 hessian_logl(M::LCModel, θ, S::AbstractMatrix) = hessian_logl(M.B, θ, S)
 function hessian_logl(B::Vector{<:Matrix}, θ, S::AbstractMatrix)
     m = length(B)
-    Σ = sum(θ[i] * B[i] for i in 1:m)
+    Σ = sum(θ[i] * B[i] for i = 1:m)
     Σ⁻¹ = inv(Σ)
     H = zeros(eltype(Σ), m, m)
-    for i in 1:m, j in i:m
+    for i = 1:m, j = i:m
         kernel = Σ⁻¹ * B[i] * Σ⁻¹ * B[j]
-        H[i,j] = H[j,i] = tr(kernel) - 2tr(S * kernel * Σ⁻¹)
+        H[i, j] = H[j, i] = tr(kernel) - 2tr(S * kernel * Σ⁻¹)
     end
     Symmetric(H)
 end
@@ -577,8 +609,15 @@ covariance matrices should be considered.
 * `only_positive`: controls whether only (entrywise) positive covariance matrices
 should be considered.
 """
-function mle(W::MLDegreeWitness, S::AbstractMatrix; only_positive_definite=true, only_positive=false, kwargs...)
-    is_dual(W) && throw(ArgumentError("`mle` is currently only supported for MLE not dual MLE."))
+function mle(
+    W::MLDegreeWitness,
+    S::AbstractMatrix;
+    only_positive_definite = true,
+    only_positive = false,
+    kwargs...,
+)
+    is_dual(W) &&
+        throw(ArgumentError("`mle` is currently only supported for MLE not dual MLE."))
     results = critical_points(W, S; kwargs...)
     ind = findfirst(r -> r[3] == :global_maximum, results)
     isnothing(ind) ? nothing : results[ind][1]

@@ -1,6 +1,6 @@
 using LinearCovarianceModels
-using DynamicPolynomials, LinearAlgebra, Test
-import HomotopyContinuation
+using LinearAlgebra, Test
+using HomotopyContinuation
 
 const HC = HomotopyContinuation
 const LC = LinearCovarianceModels
@@ -36,37 +36,22 @@ const LC = LinearCovarianceModels
         @test_throws ArgumentError generic_subspace(6, binomial(6+1,2)+1)
         @test_throws ArgumentError generic_subspace(6, 0)
 
-        @test_throws ArgumentError LCModel(toeplitz(3).Σ .^2)
+        # @test_throws ArgumentError LCModel(toeplitz(3).Σ .^2)
 
         # throw for non-symmetric input
         @test_throws ArgumentError LCModel([x[1] x[1]; x[2] x[1]])
 
         # handle special matrix types
-        @polyvar θ[1:7]
+        @var θ[1:7]
         M = LCModel(SymTridiagonal(θ[1:4],θ[5:7]))
         @test dim(M) == 7
     end
 
     @testset "mle system" begin
-        @polyvar x y z
+        @var x y z
         Σ = [x y; y z]
-        F, vars, params = mle_system(LCModel(Σ))
-        Σ₀ = [2. 3; 3 -5]
-        K₀ = inv(Σ₀)
-        F₀ = [subs(f, vars=>[[2, 3, -5]; LC.sym_to_vec(K₀)]) for f in F]
-        @test norm(F₀[end-3:end]) ≈ 0.0 atol=1e-14
-        A₀, b₀ = HC.linear_system(F₀[1:3])
-        @test norm(A₀ \ b₀ - [2,3,-5]) ≈ 0.0 atol=1e-12
-    end
-
-    @testset "mle_system_and_start_pair" begin
-        F, x₀, p₀, x, p = mle_system_and_start_pair(toeplitz(4))
-        @test norm([f(x=>x₀, p=>p₀) for f in F]) < 1e-12
-    end
-
-    @testset "dual_mle_system_and_start_pair" begin
-        F, x₀, p₀, x, p = dual_mle_system_and_start_pair(toeplitz(4))
-        @test norm([f(x=>x₀, p=>p₀) for f in F]) < 1e-12
+        F = mle_system(LCModel(Σ))
+        @test F isa HC.System
     end
 
     @testset "ml_degree_witness" begin

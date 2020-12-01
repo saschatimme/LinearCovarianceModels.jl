@@ -57,7 +57,7 @@ The linear covariance models are wrapped in the `LCModel` type:
 ```@docs
 LCModel
 model
-dim
+dim(::LCModel)
 ```
 
 ### Default models
@@ -77,8 +77,8 @@ trees
 ml_degree_witness
 MLDegreeWitness
 ml_degree
-parameters
-solutions
+parameters(W::MLDegreeWitness)
+solutions(W::MLDegreeWitness)
 is_dual
 verify
 ```

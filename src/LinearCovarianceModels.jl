@@ -296,12 +296,13 @@ Generate the mle_system and a corresponding start pair `(x₀,p₀)`.
 function mle_system_and_start_pair(M::LCModel)
     system = mle_system(M)
     θ = HC.variables(vec(M.Σ))
+    p = HC.parameters(system)
     θ₀ = randn(ComplexF64, length(θ))
-    Σ₀ = [p(θ => θ₀) for p in M.Σ]
+    Σ₀ = HC.evaluate(M.Σ, θ => θ₀)
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    exprs = system(x₀, HC.parameters(system))[1:end-length(K₀)]
-    p₀, _ = HC.find_start_pair(HC.System(exprs); compile = false)
+    exprs = system(x₀, p)[1:end-length(K₀)]
+    p₀, _ = HC.find_start_pair(HC.System(exprs, p); compile = false)
 
     (system = system, x₀ = x₀, p₀ = p₀)
 end
@@ -314,12 +315,13 @@ Generate the dual MLE system and a corresponding start pair `(x₀,p₀)`.
 function dual_mle_system_and_start_pair(M::LCModel)
     system = dual_mle_system(M)
     θ = HC.variables(vec(M.Σ))
+    p = HC.parameters(system)
     θ₀ = randn(ComplexF64, length(θ))
-    Σ₀ = [p(θ => θ₀) for p in M.Σ]
+    Σ₀ = HC.evaluate(M.Σ, θ => θ₀)
     K₀ = inv(Σ₀)
     x₀ = [θ₀; sym_to_vec(K₀)]
-    exprs = system(x₀, HC.parameters(system))[1:end-length(K₀)]
-    p₀, _ = HC.find_start_pair(HC.System(exprs); compile = false)
+    exprs = system(x₀, p)[1:end-length(K₀)]
+    p₀, _ = HC.find_start_pair(HC.System(exprs, p); compile = false)
 
     (system = system, x₀ = x₀, p₀ = p₀)
 end

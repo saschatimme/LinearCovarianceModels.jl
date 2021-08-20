@@ -28,13 +28,13 @@ const LC = LinearCovarianceModels
 
         D = generic_diagonal(6, 3)
         @test dim(D) == 3
-        @test_throws ArgumentError generic_diagonal(6, 0)
+        @test_throws Union{ArgumentError,MethodError} generic_diagonal(6, 0)
         @test_throws ArgumentError generic_diagonal(6, 7)
 
         D = generic_subspace(6, 4)
         @test dim(D) == 4
         @test_throws ArgumentError generic_subspace(6, binomial(6+1,2)+1)
-        @test_throws ArgumentError generic_subspace(6, 0)
+        @test_throws Union{ArgumentError,MethodError} generic_subspace(6, 0)
 
         # @test_throws ArgumentError LCModel(toeplitz(3).Σ .^2)
 
